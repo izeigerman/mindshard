@@ -1,0 +1,14 @@
+target/
+.git/
+.gitignore
+*.db
+*.db-shm
+*.db-wal
+*.key
+*.cer
+*.pem
+*.log
+*.org
+.env
+README.md
+docs/

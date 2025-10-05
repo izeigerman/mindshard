@@ -1,0 +1,31 @@
+[package]
+name = "mindshard"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "brotli", "deflate", "zstd"] }
+async-trait = "0.1.89"
+bytes = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+embed_anything = "0.6.4"
+hyper = { version = "1.7.0", features = ["full"] }
+hyper-util = { version = "0.1.17", features = ["full"] }
+hyper-rustls = {version = "0.27.7",  features = ["http1", "logging", "tls12", "webpki-tokio"]}
+http = "1"
+http-body-util = "0.1"
+libsql = { version = "0.9.24", features = ["core"] }
+moka = { version = "0.12.11", features = ["future"] }
+openssl = { version = "0.10.73", features = ["vendored"] }
+processors-rs = "0.6.4"
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tokio-rustls = "0.26"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = "2.5"
+uuid = { version = "1.0", features = ["v4"] }

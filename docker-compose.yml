@@ -1,0 +1,23 @@
+services:
+  mindshard:
+    build: .
+    image: mindshard:latest
+    container_name: mindshard
+    ports:
+      - "8080:8080"  # Proxy port
+      - "3000:3000"  # Web server port
+    volumes:
+      - ./mindshard.key:/app/certs/mindshard.key:ro
+      - ./mindshard.cer:/app/certs/mindshard.cer:ro
+      - mindshard-data:/app/data
+    environment:
+      - MINDSHARD_PROXY_PORT=8080
+      - MINDSHARD_WEB_PORT=3000
+      - MINDSHARD_PRIVATE_KEY_PATH=/app/certs/mindshard.key
+      - MINDSHARD_CA_CERT_PATH=/app/certs/mindshard.cer
+      - MINDSHARD_DB_PATH=/app/data/mindshard.db
+    restart: unless-stopped
+
+volumes:
+  mindshard-data:
+    driver: local
