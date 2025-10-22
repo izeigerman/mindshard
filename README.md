@@ -2,6 +2,10 @@
 
 MindShard is a shared memory of everything you browse. Built in Rust, it captures and indexes HTTP traffic with vector embeddings, enabling semantic search across your browsing history.
 
+<p align="center">
+  <img src="assets/mindshard_demo.gif" alt="MindShard"/>
+</p>
+
 MindShard respects your privacy. All processing happens locally, and no third-party services are involved beyond the initial download of the embedding model from Hugging Face.
 
 **This project is experimental and should be used for educational purposes only.** MindShard intercepts and stores HTTP traffic, which may include sensitive information. Use only in controlled environments. The author is not responsible for any misuse or data exposure resulting from the use of this software.

@@ -423,7 +423,7 @@ const HTML: &str = r#"<!DOCTYPE html>
 
             resultsDiv.innerHTML = results.map((result, index) => {
                 const entry = result.entry;
-                const date = new Date(entry.timestamp * 1000).toLocaleString();
+                const date = new Date(entry.created_at * 1000).toLocaleString();
                 const trimmedText = entry.text.trim();
                 const preview = trimmedText.length > 300
                     ? trimmedText.substring(0, 300) + '...'
