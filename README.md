@@ -6,7 +6,7 @@ MindShard respects your privacy. All processing happens locally, and no third-pa
 
 **This project is experimental and should be used for educational purposes only.** MindShard intercepts and stores HTTP traffic, which may include sensitive information. Use only in controlled environments. The author is not responsible for any misuse or data exposure resulting from the use of this software.
 
-- [Why?](#why?)
+- [Why?](#why)
 - [Prerequisites](#prerequisites)
 - [Build](#build)
 - [Run](#run)
