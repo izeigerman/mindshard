@@ -62,8 +62,10 @@ async fn test_proxy_end_to_end_with_in_memory_db() -> Result<()> {
     let proxy_port = 19999;
     let test_server_port = 19998;
 
-    let mut config = config::Config::default();
-    config.proxy_port = proxy_port;
+    let config = config::Config {
+        proxy_port,
+        ..config::Config::default()
+    };
 
     // Setup in-memory database with semantic store
     let embedding_provider = semantic_store::EmbedAnythingProvider::new()?;
