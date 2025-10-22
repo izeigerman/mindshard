@@ -17,7 +17,6 @@ use tokio::{
 };
 use tokio_rustls::TlsAcceptor;
 
-type ClientBuilder = hyper::client::conn::http1::Builder;
 type ServerBuilder = hyper::server::conn::http1::Builder;
 type HttpsConnector =
     hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
@@ -81,17 +80,17 @@ where
 
     #[allow(clippy::type_complexity)]
     fn proxy_service(
-        &self,
+        self,
         req: Request<hyper::body::Incoming>,
         scheme: Scheme,
         upgraded: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<Response<BoxBody<Bytes, anyhow::Error>>>> + Send>> {
-        let proxy_clone = self.clone();
-        Box::pin(async move { proxy_clone.proxy_service_impl(req, scheme, upgraded).await })
+    ) -> Pin<Box<impl Future<Output = Result<Response<BoxBody<Bytes, anyhow::Error>>>> + Send>>
+    {
+        Box::pin(async move { self.proxy_service_impl(req, scheme, upgraded).await })
     }
 
     async fn proxy_service_impl(
-        &self,
+        self,
         req: Request<hyper::body::Incoming>,
         scheme: Scheme,
         upgraded: bool,
@@ -102,11 +101,10 @@ where
             let uri = req.uri().clone();
             if let Some(authority) = uri.authority() {
                 let authority = authority.clone();
-                let proxy_clone = self.clone();
                 tokio::task::spawn(async move {
                     match hyper::upgrade::on(req).await {
                         Ok(upgraded) => {
-                            if let Err(e) = proxy_clone.serve_upgraded(upgraded, authority).await {
+                            if let Err(e) = self.clone().serve_upgraded(upgraded, authority).await {
                                 tracing::error!(
                                     "Server IO error for URI {}: {}",
                                     uri.to_string(),
@@ -146,14 +144,14 @@ where
         }
     }
 
-    async fn serve_upgraded(&self, upgraded: Upgraded, authority: Authority) -> Result<()> {
+    async fn serve_upgraded(self, upgraded: Upgraded, authority: Authority) -> Result<()> {
         let mut io = TokioIo::new(upgraded);
         let mut read_buffer = [0; 4];
         let bytes_read = io.read(&mut read_buffer).await?;
 
         let io = TokioIo::new(Rewind::new_buffered(
             io.into_inner(),
-            bytes::Bytes::copy_from_slice(read_buffer[..bytes_read].as_ref()),
+            Bytes::copy_from_slice(read_buffer[..bytes_read].as_ref()),
         ));
 
         if read_buffer == *b"GET " {
@@ -166,7 +164,7 @@ where
     }
 
     async fn serve_tls_stream<I>(
-        &self,
+        self,
         stream: I,
         authority: Authority,
         upgraded: bool,
@@ -179,19 +177,17 @@ where
         self.serve_stream(tls_stream, Scheme::HTTPS, upgraded).await
     }
 
-    async fn serve_stream<I>(&self, stream: I, scheme: Scheme, upgraded: bool) -> Result<()>
+    async fn serve_stream<I>(self, stream: I, scheme: Scheme, upgraded: bool) -> Result<()>
     where
         I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         let io = TokioIo::new(stream);
-        let proxy_clone = self.clone();
-
         ServerBuilder::new()
             .preserve_header_case(true)
             .title_case_headers(true)
             .serve_connection(
                 io,
-                service_fn(move |req| proxy_clone.proxy_service(req, scheme.clone(), upgraded)),
+                service_fn(move |req| self.clone().proxy_service(req, scheme.clone(), upgraded)),
             )
             .with_upgrades()
             .await?;

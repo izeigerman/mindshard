@@ -20,7 +20,7 @@ struct SearchRequest {
 }
 
 fn default_limit() -> usize {
-    10
+    5
 }
 
 #[derive(Debug, Serialize)]
@@ -352,8 +352,8 @@ const HTML: &str = r#"<!DOCTYPE html>
                     >
                 </div>
                 <select id="limitSelect">
-                    <option value="5">5 results</option>
-                    <option value="10" selected>10 results</option>
+                    <option value="5" selected>5 results</option>
+                    <option value="10">10 results</option>
                     <option value="20">20 results</option>
                     <option value="50">50 results</option>
                     <option value="100">100 results</option>

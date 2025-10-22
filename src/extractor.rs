@@ -1,13 +1,11 @@
 use crate::loader::HtmlDocument;
 use crate::proxy::http::HttpResponseHandler;
 use anyhow::Result;
-use async_compression::tokio::bufread::{BrotliDecoder, DeflateDecoder, GzipDecoder, ZstdDecoder};
 use async_trait::async_trait;
 use bytes::Bytes;
 use http::uri::Uri;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{body::Body, header::CONTENT_TYPE, Response};
-use tokio::io::BufReader;
 use tokio::sync::mpsc;
 
 const SUPPORTED_ENCODINGS: &[&str] = &["gzip", "br", "deflate", "zstd", "identity"];
@@ -25,36 +23,6 @@ impl HttpBodyExtractor {
             min_body_size: 50,
             max_body_size: 10 * 1024 * 1024,
         }
-    }
-
-    async fn decompress_body(body: Bytes, encoding: Option<String>) -> Result<Bytes> {
-        let encoding = match encoding.as_deref() {
-            Some("identity") | None => {
-                return Ok(body);
-            }
-            Some(enc) => enc,
-        };
-
-        let reader = BufReader::new(&body[..]);
-        let mut decompressed_buffer = Vec::new();
-        match encoding {
-            "gzip" => {
-                tokio::io::copy(&mut GzipDecoder::new(reader), &mut decompressed_buffer).await?
-            }
-            "br" => {
-                tokio::io::copy(&mut BrotliDecoder::new(reader), &mut decompressed_buffer).await?
-            }
-            "deflate" => {
-                tokio::io::copy(&mut DeflateDecoder::new(reader), &mut decompressed_buffer).await?
-            }
-            "zstd" => {
-                tokio::io::copy(&mut ZstdDecoder::new(reader), &mut decompressed_buffer).await?
-            }
-            _ => {
-                anyhow::bail!("Unsupported Content-Encoding: {encoding}");
-            }
-        };
-        Ok(Bytes::from(decompressed_buffer))
     }
 }
 

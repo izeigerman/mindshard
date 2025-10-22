@@ -1,6 +1,10 @@
 # 🧠 MindShard
 
-A Rust-based HTTP proxy that captures and indexes HTTP traffic using vector embeddings.
+MindShard is a shared memory of everything you browse. Built in Rust, it captures and indexes HTTP traffic with vector embeddings, enabling semantic search across your browsing history.
+
+MindShard respects your privacy. All processing happens locally, and no third-party services are involved beyond the initial download of the embedding model from Hugging Face.
+
+**This project is experimental and should be used for educational purposes only.** MindShard intercepts and stores HTTP traffic, which may include sensitive information. Use only in controlled environments. The author is not responsible for any misuse or data exposure resulting from the use of this software.
 
 - [Why?](#why?)
 - [Prerequisites](#prerequisites)
@@ -27,11 +31,10 @@ MindShard solves this problem by automatically capturing and indexing everything
 
 Think of it as a photographic memory for your web browsing - every article, blog post, and paper you read is preserved and instantly searchable by its actual content and meaning.
 
-**This project is experimental and should be used at your own risk.** MindShard intercepts and stores HTTP traffic, which may include sensitive information. Use only in controlled environments. The author is not responsible for any misuse or data exposure resulting from the use of this software.
-
 ## Prerequisites
 
 - Rust 1.88 or later
+- OpenSSL
 
 Generate a self-signed certificate and private key:
 

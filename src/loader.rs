@@ -64,7 +64,7 @@ where
         }
     }
 
-    async fn process_document(&self, document: HtmlDocument) {
+    async fn process_document(self, document: HtmlDocument) {
         let uri_str = document.uri.to_string();
         match self.split_document(document).await {
             Ok(chunks) => {
@@ -92,6 +92,15 @@ where
             Some(enc) => &Self::decompress_body(&document.body, enc).await?,
         };
         let decoded_body = std::str::from_utf8(decompressed_body)?;
+        let decoded_body = decoded_body.trim_start();
+        if !decoded_body[..50].contains("<html") {
+            // A very naive check to see if the document is HTML
+            anyhow::bail!(
+                "Document does not appear to be HTML ({}):\n{}...",
+                document.uri,
+                &decoded_body[..50]
+            );
+        }
         let chunks = self.splitter.split(decoded_body)?;
         Ok(chunks)
     }

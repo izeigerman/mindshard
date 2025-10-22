@@ -61,7 +61,7 @@ pub struct VectorStoreEntry {
     pub url: String,
     pub text: String,
     pub text_length: i32,
-    pub timestamp: i64,
+    pub created_at: i64,
     pub domain: String,
 }
 
@@ -116,7 +116,7 @@ impl LibSqlProvider {
                         url TEXT NOT NULL,
                         text TEXT NOT NULL,
                         text_length INTEGER NOT NULL,
-                        timestamp INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
                         domain TEXT NOT NULL,
                         embedding F32_BLOB({}) NOT NULL
                     )",
@@ -150,13 +150,13 @@ impl VectorStoreBackend for LibSqlProvider {
     async fn add_entry(&self, entry: VectorStoreEntry, embedding: Vec<f32>) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO entries (id, url, text, text_length, timestamp, domain, embedding) VALUES (?1, ?2, ?3, ?4, ?5, ?6, vector32(?7))",
+                "INSERT INTO entries (id, url, text, text_length, created_at, domain, embedding) VALUES (?1, ?2, ?3, ?4, ?5, ?6, vector32(?7))",
                 libsql::params![
                     entry.id.as_str(),
                     entry.url.as_str(),
                     entry.text.as_str(),
                     entry.text_length,
-                    entry.timestamp,
+                    entry.created_at,
                     entry.domain.as_str(),
                     embedding_to_str(&embedding).as_str(),
                 ],
@@ -169,7 +169,7 @@ impl VectorStoreBackend for LibSqlProvider {
         let mut rows = self
             .conn
             .query(
-                "SELECT entries.id, url, text, text_length, timestamp, domain, vector_distance_cos(entries.embedding, vector32(?1)) AS score
+                "SELECT entries.id, url, text, text_length, created_at, domain, vector_distance_cos(entries.embedding, vector32(?1)) AS score
                 FROM vector_top_k('entries_embedding_idx', vector32(?1), ?2) AS top_k
                 JOIN entries ON entries.rowid = top_k.id
                 ORDER BY score ASC",
@@ -192,7 +192,7 @@ impl VectorStoreBackend for LibSqlProvider {
         let mut rows = self
             .conn
             .query(
-                "SELECT id, url, text, text_length, timestamp, domain
+                "SELECT id, url, text, text_length, created_at, domain
                 FROM entries
                 LIMIT ?1
                 OFFSET ?2",
@@ -262,7 +262,7 @@ where
             url: url.to_string(),
             text: text.to_string(),
             text_length: text.len() as i32,
-            timestamp: chrono::Utc::now().timestamp(),
+            created_at: chrono::Utc::now().timestamp(),
             domain: url_parsed.host_str().unwrap_or("unknown").to_string(),
         };
         self.backend.add_entry(entry, embedding).await
