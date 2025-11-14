@@ -99,8 +99,9 @@ where
         tracing::debug!("Request: {:?}", req);
 
         if hyper_tungstenite::is_upgrade_request(&req) {
+            let req = recover_uri_authority(req, scheme)?;
             tracing::info!(
-                "Websocket upgrade request detected for URI: {:?}",
+                "WebSocket upgrade request detected for URI: {:?}",
                 req.uri()
             );
             return self.upgrade_websocket(req);
@@ -203,58 +204,16 @@ where
         Ok(())
     }
 
-    fn upgrade_websocket(
-        self,
-        req: Request<hyper::body::Incoming>,
-    ) -> Result<Response<BoxBody<Bytes, anyhow::Error>>> {
-        let mut req = {
-            let (mut parts, _) = req.into_parts();
-
-            parts.uri = {
-                let mut parts = parts.uri.into_parts();
-
-                parts.scheme = if parts.scheme.unwrap_or(Scheme::HTTP) == Scheme::HTTP {
-                    Some("ws".try_into()?)
-                } else {
-                    Some("wss".try_into()?)
-                };
-
-                Uri::from_parts(parts).expect("Failed to build URI")
-            };
-
-            Request::from_parts(parts, ())
-        };
-
-        let (res, websocket) = hyper_tungstenite::upgrade(&mut req, None)?;
-
-        let fut = async move {
-            match websocket.await {
-                Ok(ws) => {
-                    if let Err(e) = self.serve_websocket(ws, req).await {
-                        tracing::error!("Failed to handle websocket: {e}");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to upgrade to websocket: {e}");
-                }
-            }
-        };
-
-        tokio::task::spawn(fut);
-        Ok(res.map(|b| b.map_err(|e| match e {}).boxed()))
-    }
-
     async fn serve_websocket(
         self,
         client_ws: hyper_tungstenite::WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>,
-        req: Request<()>,
+        target_uri: &Uri,
     ) -> Result<()> {
-        tracing::debug!("Handling websocket connection for URI: {:?}", req.uri());
+        tracing::debug!("Handling WebSocket connection for URI: {:?}", target_uri);
 
-        let uri = req.uri();
-        let (server_ws, _) = tokio_tungstenite::connect_async(uri.to_string()).await?;
+        let (server_ws, _) = tokio_tungstenite::connect_async(target_uri.to_string()).await?;
 
-        tracing::info!("Connected to backend websocket: {}", uri);
+        tracing::info!("Connected to the WebSocket destination: {}", target_uri);
 
         let (mut client_sink, mut client_stream) = client_ws.split();
         let (mut server_sink, mut server_stream) = server_ws.split();
@@ -263,7 +222,7 @@ where
             while let Some(msg) = client_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::debug!("Websocket Client -> Server: {:?}", msg);
+                        tracing::debug!("WebSocket Client -> Server: {:?}", msg);
                         if server_sink.send(msg).await.is_err() {
                             break;
                         }
@@ -281,7 +240,7 @@ where
             while let Some(msg) = server_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::debug!("Websocket Server -> Client: {:?}", msg);
+                        tracing::debug!("WebSocket Server -> Client: {:?}", msg);
                         if client_sink.send(msg).await.is_err() {
                             break;
                         }
@@ -300,8 +259,49 @@ where
             _ = server_to_client => {},
         }
 
-        tracing::info!("Websocket connection closed for URI: {}", uri);
+        tracing::info!("WebSocket connection closed for URI: {}", target_uri);
         Ok(())
+    }
+
+    fn upgrade_websocket(
+        self,
+        req: Request<hyper::body::Incoming>,
+    ) -> Result<Response<BoxBody<Bytes, anyhow::Error>>> {
+        let mut req = {
+            let (mut parts, _) = req.into_parts();
+
+            parts.uri = {
+                let mut parts = parts.uri.into_parts();
+
+                parts.scheme = if parts.scheme.unwrap_or(Scheme::HTTP) == Scheme::HTTP {
+                    Some("ws".try_into()?)
+                } else {
+                    Some("wss".try_into()?)
+                };
+
+                Uri::from_parts(parts)?
+            };
+
+            Request::from_parts(parts, ())
+        };
+
+        let (res, websocket) = hyper_tungstenite::upgrade(&mut req, None)?;
+
+        let fut = async move {
+            match websocket.await {
+                Ok(ws) => {
+                    if let Err(e) = self.serve_websocket(ws, req.uri()).await {
+                        tracing::error!("Failed to handle WebSocket stream: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to upgrade to WebSocket: {e}");
+                }
+            }
+        };
+
+        tokio::task::spawn(fut);
+        Ok(res.map(|b| b.map_err(|e| match e {}).boxed()))
     }
 }
 
