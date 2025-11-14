@@ -4,6 +4,7 @@ use super::Proxy;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures_util::{SinkExt, StreamExt};
 use http::uri::{Authority, Scheme, Uri};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{service::service_fn, upgrade::Upgraded, Method, Request, Response};
@@ -96,6 +97,14 @@ where
         upgraded: bool,
     ) -> Result<Response<BoxBody<Bytes, anyhow::Error>>> {
         tracing::debug!("Request: {:?}", req);
+
+        if hyper_tungstenite::is_upgrade_request(&req) {
+            tracing::info!(
+                "Websocket upgrade request detected for URI: {:?}",
+                req.uri()
+            );
+            return self.upgrade_websocket(req);
+        }
 
         if Method::CONNECT == req.method() {
             let uri = req.uri().clone();
@@ -191,6 +200,107 @@ where
             )
             .with_upgrades()
             .await?;
+        Ok(())
+    }
+
+    fn upgrade_websocket(
+        self,
+        req: Request<hyper::body::Incoming>,
+    ) -> Result<Response<BoxBody<Bytes, anyhow::Error>>> {
+        let mut req = {
+            let (mut parts, _) = req.into_parts();
+
+            parts.uri = {
+                let mut parts = parts.uri.into_parts();
+
+                parts.scheme = if parts.scheme.unwrap_or(Scheme::HTTP) == Scheme::HTTP {
+                    Some("ws".try_into()?)
+                } else {
+                    Some("wss".try_into()?)
+                };
+
+                Uri::from_parts(parts).expect("Failed to build URI")
+            };
+
+            Request::from_parts(parts, ())
+        };
+
+        let (res, websocket) = hyper_tungstenite::upgrade(&mut req, None)?;
+
+        let fut = async move {
+            match websocket.await {
+                Ok(ws) => {
+                    if let Err(e) = self.serve_websocket(ws, req).await {
+                        tracing::error!("Failed to handle websocket: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to upgrade to websocket: {e}");
+                }
+            }
+        };
+
+        tokio::task::spawn(fut);
+        Ok(res.map(|b| b.map_err(|e| match e {}).boxed()))
+    }
+
+    async fn serve_websocket(
+        self,
+        client_ws: hyper_tungstenite::WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>,
+        req: Request<()>,
+    ) -> Result<()> {
+        tracing::debug!("Handling websocket connection for URI: {:?}", req.uri());
+
+        let uri = req.uri();
+        let (server_ws, _) = tokio_tungstenite::connect_async(uri.to_string()).await?;
+
+        tracing::info!("Connected to backend websocket: {}", uri);
+
+        let (mut client_sink, mut client_stream) = client_ws.split();
+        let (mut server_sink, mut server_stream) = server_ws.split();
+
+        let client_to_server = async move {
+            while let Some(msg) = client_stream.next().await {
+                match msg {
+                    Ok(msg) => {
+                        tracing::debug!("Websocket Client -> Server: {:?}", msg);
+                        if server_sink.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Error receiving from client: {}", e);
+                        break;
+                    }
+                }
+            }
+            tracing::debug!("Client to server stream closed");
+        };
+
+        let server_to_client = async move {
+            while let Some(msg) = server_stream.next().await {
+                match msg {
+                    Ok(msg) => {
+                        tracing::debug!("Websocket Server -> Client: {:?}", msg);
+                        if client_sink.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Error receiving from server: {}", e);
+                        break;
+                    }
+                }
+            }
+            tracing::debug!("Server to client stream closed");
+        };
+
+        tokio::select! {
+            _ = client_to_server => {},
+            _ = server_to_client => {},
+        }
+
+        tracing::info!("Websocket connection closed for URI: {}", uri);
         Ok(())
     }
 }

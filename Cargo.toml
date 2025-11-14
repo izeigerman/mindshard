@@ -10,9 +10,11 @@ async-trait = "0.1.89"
 bytes = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 embed_anything = "0.6.4"
+futures-util = "0.3"
 hyper = { version = "1.7.0", features = ["full"] }
-hyper-util = { version = "0.1.17", features = ["full"] }
 hyper-rustls = {version = "0.27.7",  features = ["http1", "logging", "tls12", "webpki-tokio"]}
+hyper-tungstenite = "0.19.0"
+hyper-util = { version = "0.1.17", features = ["full"] }
 htmd = "0.3"
 http = "1"
 http-body-util = "0.1"
@@ -26,6 +28,7 @@ serde_json = "1.0"
 text-splitter = { version = "0.28.0", features = ["markdown"] }
 tokio = { version = "1.0", features = ["full"] }
 tokio-rustls = "0.26"
+tokio-tungstenite = {version = "0.28.0", features =["rustls-tls-webpki-roots"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
 url = "2.5"
