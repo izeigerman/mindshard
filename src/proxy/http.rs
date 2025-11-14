@@ -223,12 +223,13 @@ where
                 match msg {
                     Ok(msg) => {
                         tracing::debug!("WebSocket Client -> Server: {:?}", msg);
-                        if server_sink.send(msg).await.is_err() {
+                        if let Err(e) = server_sink.send(msg).await {
+                            tracing::error!("Error sending message to server: {}", e);
                             break;
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error receiving from client: {}", e);
+                        tracing::error!("Error receiving message from client: {}", e);
                         break;
                     }
                 }
@@ -241,17 +242,18 @@ where
                 match msg {
                     Ok(msg) => {
                         tracing::debug!("WebSocket Server -> Client: {:?}", msg);
-                        if client_sink.send(msg).await.is_err() {
+                        if let Err(e) = client_sink.send(msg).await {
+                            tracing::error!("Error sending message to client: {}", e);
                             break;
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error receiving from server: {}", e);
+                        tracing::error!("Error receiving message from server: {}", e);
                         break;
                     }
                 }
             }
-            tracing::debug!("Server to client stream closed");
+            tracing::debug!("Server to client WebSocket stream closed");
         };
 
         tokio::select! {
@@ -301,7 +303,7 @@ where
         };
 
         tokio::task::spawn(fut);
-        Ok(res.map(|b| b.map_err(|e| match e {}).boxed()))
+        Ok(res.map(|b| b.map_err(|never| match never {}).boxed()))
     }
 }
 
