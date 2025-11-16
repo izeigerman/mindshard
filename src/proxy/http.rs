@@ -115,22 +115,18 @@ where
                     match hyper::upgrade::on(req).await {
                         Ok(upgraded) => {
                             if let Err(e) = self.clone().serve_upgraded(upgraded, authority).await {
-                                tracing::error!(
-                                    "Server IO error for URI {}: {}",
-                                    uri.to_string(),
-                                    e
-                                );
+                                tracing::error!("Server IO error for URI {uri}: {e}");
                             };
                         }
                         Err(e) => {
-                            tracing::error!("Upgrade error for URI {}: {}", uri.to_string(), e)
+                            tracing::error!("Upgrade error for URI {uri}: {e}");
                         }
                     }
                 });
 
                 Ok(Response::new(empty()))
             } else {
-                tracing::error!("CONNECT URI is missing host: {}", uri.to_string());
+                tracing::error!("CONNECT URI is missing host: {uri}");
                 let mut resp = Response::new(full("CONNECT URI must specify host"));
                 *resp.status_mut() = http::StatusCode::BAD_REQUEST;
 
@@ -209,11 +205,11 @@ where
         client_ws: hyper_tungstenite::WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>,
         target_uri: &Uri,
     ) -> Result<()> {
-        tracing::debug!("Handling WebSocket connection for URI: {:?}", target_uri);
+        tracing::debug!("Handling WebSocket connection for URI: {target_uri}");
 
         let (server_ws, _) = tokio_tungstenite::connect_async(target_uri.to_string()).await?;
 
-        tracing::info!("Connected to the WebSocket destination: {}", target_uri);
+        tracing::info!("Connected to the WebSocket destination: {target_uri}");
 
         let (mut client_sink, mut client_stream) = client_ws.split();
         let (mut server_sink, mut server_stream) = server_ws.split();
@@ -224,12 +220,12 @@ where
                     Ok(msg) => {
                         tracing::trace!("WebSocket Client -> Server");
                         if let Err(e) = server_sink.send(msg).await {
-                            tracing::error!("Error sending message to server: {}", e);
+                            tracing::error!("Error sending message to server: {e}");
                             break;
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error receiving message from client: {}", e);
+                        tracing::error!("Error receiving message from client: {e}");
                         break;
                     }
                 }
@@ -243,12 +239,12 @@ where
                     Ok(msg) => {
                         tracing::trace!("WebSocket Server -> Client");
                         if let Err(e) = client_sink.send(msg).await {
-                            tracing::error!("Error sending message to client: {}", e);
+                            tracing::error!("Error sending message to client: {e}");
                             break;
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error receiving message from server: {}", e);
+                        tracing::error!("Error receiving message from server: {e}");
                         break;
                     }
                 }
@@ -256,12 +252,8 @@ where
             tracing::debug!("Server to client WebSocket stream closed");
         };
 
-        tokio::select! {
-            _ = client_to_server => {},
-            _ = server_to_client => {},
-        }
-
-        tracing::info!("WebSocket connection closed for URI: {}", target_uri);
+        tokio::task::spawn(client_to_server);
+        tokio::task::spawn(server_to_client);
         Ok(())
     }
 
@@ -324,7 +316,7 @@ where
             let proxy = self.clone();
             tokio::task::spawn(async move {
                 if let Err(err) = proxy.serve_stream(stream, Scheme::HTTP, false).await {
-                    tracing::error!("Failed to serve connection: {:?}", err);
+                    tracing::error!("Failed to serve connection: {err:?}");
                 }
             });
         }
