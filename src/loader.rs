@@ -93,7 +93,8 @@ where
         };
         let decoded_body = std::str::from_utf8(decompressed_body)?;
         let decoded_body = decoded_body.trim_start();
-        if !decoded_body[..50].to_lowercase().contains("<html") {
+        let check_payload_body = decoded_body[..50].to_lowercase();
+        if !check_payload_body.contains("<html") && !check_payload_body.contains("<!doctype html") {
             // A very naive check to see if the document is HTML
             anyhow::bail!(
                 "Document does not appear to be HTML ({}):\n{}...",
