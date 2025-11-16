@@ -222,7 +222,7 @@ where
             while let Some(msg) = client_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::debug!("WebSocket Client -> Server: {:?}", msg);
+                        tracing::trace!("WebSocket Client -> Server");
                         if let Err(e) = server_sink.send(msg).await {
                             tracing::error!("Error sending message to server: {}", e);
                             break;
@@ -241,7 +241,7 @@ where
             while let Some(msg) = server_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::debug!("WebSocket Server -> Client: {:?}", msg);
+                        tracing::trace!("WebSocket Server -> Client");
                         if let Err(e) = client_sink.send(msg).await {
                             tracing::error!("Error sending message to client: {}", e);
                             break;
