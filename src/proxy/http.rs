@@ -252,8 +252,14 @@ where
             tracing::debug!("Server to client WebSocket stream closed");
         };
 
-        tokio::task::spawn(client_to_server);
-        tokio::task::spawn(server_to_client);
+        tokio::select! {
+            _ = client_to_server => {
+                tracing::debug!("Client to server task completed");
+            }
+            _ = server_to_client => {
+                tracing::debug!("Server to client task completed");
+            }
+        }
         Ok(())
     }
 
