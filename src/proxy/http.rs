@@ -218,7 +218,7 @@ where
             while let Some(msg) = client_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::trace!("WebSocket Client -> Server");
+                        tracing::debug!("WebSocket Client -> Server");
                         if let Err(e) = server_sink.send(msg).await {
                             tracing::error!("Error sending message to server: {e}");
                             break;
@@ -237,7 +237,7 @@ where
             while let Some(msg) = server_stream.next().await {
                 match msg {
                     Ok(msg) => {
-                        tracing::trace!("WebSocket Server -> Client");
+                        tracing::debug!("WebSocket Server -> Client");
                         if let Err(e) = client_sink.send(msg).await {
                             tracing::error!("Error sending message to client: {e}");
                             break;
@@ -254,12 +254,13 @@ where
 
         tokio::select! {
             _ = client_to_server => {
-                tracing::debug!("Client to server task completed");
+                tracing::debug!("WebSocket client to server task completed");
             }
             _ = server_to_client => {
-                tracing::debug!("Server to client task completed");
+                tracing::debug!("WebSocket server to client task completed");
             }
         }
+        tracing::info!("WebSocket connection closed for URI: {}", target_uri);
         Ok(())
     }
 
