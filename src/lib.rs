@@ -35,7 +35,7 @@ where
     let loader = loader::HtmlLoader::new(semantic_store.clone(), splitter);
 
     let (tx, rx) = mpsc::channel::<loader::HtmlDocument>(100);
-    let extractor = extractor::HttpBodyExtractor::new(tx);
+    let extractor = extractor::HttpBodyExtractor::new(tx, config.browser_only);
 
     let proxy_result = proxy::start_http_proxy(
         config.proxy_port,

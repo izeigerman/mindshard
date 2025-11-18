@@ -105,6 +105,7 @@ async fn test_proxy_end_to_end_with_in_memory_db() -> Result<()> {
     let req = Request::builder()
         .uri(&target_url)
         .header("Host", format!("127.0.0.1:{}", test_server_port))
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
         .body(Full::new(Bytes::new()))
         .unwrap();
 

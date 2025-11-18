@@ -10,25 +10,86 @@ use tokio::sync::mpsc;
 
 const SUPPORTED_ENCODINGS: &[&str] = &["gzip", "br", "deflate", "zstd", "identity"];
 
+const BROWSER_USER_AGENTS: &[&str] = &[
+    // Chrome (Desktop & Mobile)
+    "chrome/",
+    "crios/", // Chrome iOS
+    // Firefox (Desktop & Mobile)
+    "firefox/",
+    "fxios/", // Firefox iOS
+    // Safari (Desktop & Mobile)
+    "safari/",
+    "version/", // Safari version indicator
+    // Edge
+    "edg/",
+    "edgios/", // Edge iOS
+    "edga/",   // Edge Android
+    // Opera
+    "opr/",
+    "opera/",
+    "opt/", // Opera Touch
+    // Samsung Internet
+    "samsungbrowser/",
+    // Brave (uses Chrome user agent but sometimes includes Brave)
+    "brave/",
+    // Vivaldi
+    "vivaldi/",
+    // UC Browser
+    "ucbrowser/",
+    "ucweb/",
+];
+
+fn is_browser(user_agent: &str) -> bool {
+    let ua_lower = user_agent.to_lowercase();
+    BROWSER_USER_AGENTS
+        .iter()
+        .any(|&marker| ua_lower.contains(marker))
+}
+
 pub struct HttpBodyExtractor {
     tx: mpsc::Sender<HtmlDocument>,
     min_body_size: usize,
     max_body_size: usize,
+    browser_only: bool,
 }
 
 impl HttpBodyExtractor {
-    pub fn new(tx: mpsc::Sender<HtmlDocument>) -> Self {
+    pub fn new(tx: mpsc::Sender<HtmlDocument>, browser_only: bool) -> Self {
         Self {
             tx,
             min_body_size: 50,
             max_body_size: 10 * 1024 * 1024,
+            browser_only,
         }
     }
 }
 
 #[async_trait]
 impl HttpResponseHandler for HttpBodyExtractor {
-    async fn filter_response(&self, response: &Response<hyper::body::Incoming>) -> Result<bool> {
+    async fn filter_response(
+        &self,
+        request_headers: &hyper::HeaderMap,
+        response: &Response<hyper::body::Incoming>,
+    ) -> Result<bool> {
+        if self.browser_only {
+            if let Some(user_agent) = request_headers.get(hyper::header::USER_AGENT) {
+                if let Ok(user_agent_str) = user_agent.to_str() {
+                    if !is_browser(user_agent_str) {
+                        tracing::debug!(
+                            "Skipping request from a non-browser User-Agent: {user_agent_str}"
+                        );
+                        return Ok(false);
+                    }
+                } else {
+                    tracing::debug!("Invalid User-Agent header: {user_agent:?}");
+                    return Ok(false);
+                }
+            } else {
+                tracing::debug!("No User-Agent header was found");
+                return Ok(false);
+            }
+        }
+
         let encoding = response
             .headers()
             .get(hyper::header::CONTENT_ENCODING)

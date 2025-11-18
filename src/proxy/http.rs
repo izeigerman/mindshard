@@ -26,7 +26,11 @@ type HttpsConnector =
 #[async_trait]
 pub trait HttpResponseHandler {
     /// Return true if the response should be processed by `handle_response`.
-    async fn filter_response(&self, _response: &Response<hyper::body::Incoming>) -> Result<bool> {
+    async fn filter_response(
+        &self,
+        _request_headers: &hyper::HeaderMap,
+        _response: &Response<hyper::body::Incoming>,
+    ) -> Result<bool> {
         Ok(true)
     }
 
@@ -141,8 +145,13 @@ where
             }
 
             let uri = req.uri().clone();
+            let request_headers = req.headers().clone();
             let resp = self.client.request(req).await?;
-            if self.response_handler.filter_response(&resp).await? {
+            if self
+                .response_handler
+                .filter_response(&request_headers, &resp)
+                .await?
+            {
                 self.response_handler.handle_response(uri, resp).await
             } else {
                 Ok(resp.map(|b| b.map_err(anyhow::Error::new).boxed()))
