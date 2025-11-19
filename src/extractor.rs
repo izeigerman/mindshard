@@ -19,7 +19,6 @@ const BROWSER_USER_AGENTS: &[&str] = &[
     "fxios/", // Firefox iOS
     // Safari (Desktop & Mobile)
     "safari/",
-    "version/", // Safari version indicator
     // Edge
     "edg/",
     "edgios/", // Edge iOS
