@@ -9,6 +9,7 @@ pub struct Config {
     pub private_key_path: PathBuf,
     pub ca_cert_path: PathBuf,
     pub chunk_size: usize,
+    pub browser_only: bool,
 }
 
 impl Config {
@@ -41,6 +42,10 @@ impl Default for Config {
                 .unwrap_or_else(|_| "mindshard.cer".to_string())
                 .into(),
             chunk_size: 1000,
+            browser_only: std::env::var("MINDSHARD_BROWSER_ONLY")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
         }
     }
 }

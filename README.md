@@ -115,13 +115,14 @@ docker run -d \
 
 The application is configured via environment variables:
 
-| Variable                     | Default         | Description                      |
-|------------------------------|-----------------|----------------------------------|
-| `MINDSHARD_PROXY_PORT`       | `8080`          | Port for the HTTP proxy server   |
-| `MINDSHARD_WEB_PORT`         | `3000`          | Port for the web server          |
-| `MINDSHARD_PRIVATE_KEY_PATH` | `mindshard.key` | Path to the private key file     |
-| `MINDSHARD_CA_CERT_PATH`     | `mindshard.cer` | Path to the CA certificate file  |
-| `MINDSHARD_DB_PATH`          | `mindshard.db`  | Path to the LibSQL database file |
+| Variable                     | Default         | Description                                                                 |
+|------------------------------|-----------------|-----------------------------------------------------------------------------|
+| `MINDSHARD_PROXY_PORT`       | `8080`          | Port for the HTTP proxy server                                              |
+| `MINDSHARD_WEB_PORT`         | `3000`          | Port for the web server                                                     |
+| `MINDSHARD_PRIVATE_KEY_PATH` | `mindshard.key` | Path to the private key file                                                |
+| `MINDSHARD_CA_CERT_PATH`     | `mindshard.cer` | Path to the CA certificate file                                             |
+| `MINDSHARD_DB_PATH`          | `mindshard.db`  | Path to the LibSQL database file                                            |
+| `MINDSHARD_BROWSER_ONLY`     | `true`          | Only process requests from web browsers (filters out API calls, bots, etc.) |
 
 ## Installing and Trusting the Root Certificate
 
