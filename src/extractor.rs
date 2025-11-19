@@ -6,43 +6,18 @@ use bytes::Bytes;
 use http::uri::Uri;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{body::Body, header::CONTENT_TYPE, Response};
+use regex::Regex;
+use std::sync::LazyLock;
 use tokio::sync::mpsc;
 
 const SUPPORTED_ENCODINGS: &[&str] = &["gzip", "br", "deflate", "zstd", "identity"];
 
-const BROWSER_USER_AGENTS: &[&str] = &[
-    // Chrome (Desktop & Mobile)
-    "chrome/",
-    "crios/", // Chrome iOS
-    // Firefox (Desktop & Mobile)
-    "firefox/",
-    "fxios/", // Firefox iOS
-    // Safari (Desktop & Mobile)
-    "safari/",
-    // Edge
-    "edg/",
-    "edgios/", // Edge iOS
-    "edga/",   // Edge Android
-    // Opera
-    "opr/",
-    "opera/",
-    "opt/", // Opera Touch
-    // Samsung Internet
-    "samsungbrowser/",
-    // Brave (uses Chrome user agent but sometimes includes Brave)
-    "brave/",
-    // Vivaldi
-    "vivaldi/",
-    // UC Browser
-    "ucbrowser/",
-    "ucweb/",
-];
+static BROWSER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(chrome/|crios/|firefox/|fxios/|safari/|edg/|edgios/|edga/|opr/|opera/|opt/|samsungbrowser/|brave/|vivaldi/|ucbrowser/|ucweb/)").unwrap()
+});
 
 fn is_browser(user_agent: &str) -> bool {
-    let ua_lower = user_agent.to_lowercase();
-    BROWSER_USER_AGENTS
-        .iter()
-        .any(|&marker| ua_lower.contains(marker))
+    BROWSER_REGEX.is_match(&user_agent.to_lowercase())
 }
 
 pub struct HttpBodyExtractor {
