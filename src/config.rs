@@ -10,6 +10,7 @@ pub struct Config {
     pub ca_cert_path: PathBuf,
     pub chunk_size: usize,
     pub browser_only: bool,
+    pub host_exclusion_patterns: Vec<String>,
 }
 
 impl Config {
@@ -20,10 +21,31 @@ impl Config {
     pub fn ca_cert_bytes(&self) -> std::io::Result<Vec<u8>> {
         std::fs::read(&self.ca_cert_path)
     }
+
+    pub fn compile_host_exclusion_patterns(&self) -> Result<Vec<regex::Regex>, regex::Error> {
+        self.host_exclusion_patterns
+            .iter()
+            .map(|pattern| regex::Regex::new(pattern))
+            .collect()
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
+        let host_exclusion_patterns = std::env::var("MINDSHARD_HOST_EXCLUSION_PATTERNS")
+            .ok()
+            .map(|patterns_str| {
+                if patterns_str.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    patterns_str
+                        .split(',')
+                        .map(|pattern| pattern.trim().to_string())
+                        .collect()
+                }
+            })
+            .unwrap_or_default();
+
         Self {
             proxy_port: std::env::var("MINDSHARD_PROXY_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
@@ -46,6 +68,7 @@ impl Default for Config {
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
+            host_exclusion_patterns,
         }
     }
 }

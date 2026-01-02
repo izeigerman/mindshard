@@ -46,6 +46,7 @@ pub(crate) struct HttpProxy<CA, H> {
     ca: Arc<CA>,
     client: Client<HttpsConnector, hyper::body::Incoming>,
     response_handler: Arc<H>,
+    host_exclusion_patterns: Vec<regex::Regex>,
 }
 
 impl<CA, H> Clone for HttpProxy<CA, H> {
@@ -54,6 +55,7 @@ impl<CA, H> Clone for HttpProxy<CA, H> {
             ca: self.ca.clone(),
             client: self.client.clone(),
             response_handler: self.response_handler.clone(),
+            host_exclusion_patterns: self.host_exclusion_patterns.clone(),
         }
     }
 }
@@ -63,7 +65,11 @@ where
     CA: CertificateAuthority + Send + Sync + 'static,
     H: HttpResponseHandler + Send + Sync + 'static,
 {
-    pub fn new(ca: Arc<CA>, response_handler: Arc<H>) -> Result<Self> {
+    pub fn new(
+        ca: Arc<CA>,
+        response_handler: Arc<H>,
+        host_exclusion_patterns: Vec<regex::Regex>,
+    ) -> Result<Self> {
         let https = HttpsConnectorBuilder::new()
             .with_native_roots()?
             .https_or_http()
@@ -80,6 +86,7 @@ where
             ca,
             client,
             response_handler,
+            host_exclusion_patterns,
         })
     }
 
@@ -127,7 +134,6 @@ where
                         }
                     }
                 });
-
                 Ok(Response::new(empty()))
             } else {
                 tracing::error!("CONNECT URI is missing host: {uri}");
@@ -160,6 +166,11 @@ where
     }
 
     async fn serve_upgraded(self, upgraded: Upgraded, authority: Authority) -> Result<()> {
+        if self.should_exclude_host(&authority) {
+            // If the host is excluded from interception, just do passthrough tunneling
+            return Self::serve_passthrough(upgraded, authority).await;
+        }
+
         let mut io = TokioIo::new(upgraded);
         let mut read_buffer = [0; 4];
         let bytes_read = io.read(&mut read_buffer).await?;
@@ -273,6 +284,24 @@ where
         Ok(())
     }
 
+    async fn serve_passthrough(upgraded: Upgraded, authority: Authority) -> Result<()> {
+        tracing::debug!("Starting passthrough tunnel to {authority}");
+
+        let mut target_stream = tokio::net::TcpStream::connect(authority.to_string()).await?;
+        tracing::info!("Connected to {authority} for passthrough tunneling");
+
+        let mut client_io = TokioIo::new(upgraded);
+
+        let (client_to_server, server_to_client) =
+            tokio::io::copy_bidirectional(&mut client_io, &mut target_stream).await?;
+
+        tracing::debug!(
+            "Passthrough tunnel closed for {authority}: {client_to_server} bytes C->T, {server_to_client} bytes T->C"
+        );
+
+        Ok(())
+    }
+
     fn upgrade_websocket(
         self,
         req: Request<hyper::body::Incoming>,
@@ -312,6 +341,20 @@ where
 
         tokio::task::spawn(fut);
         Ok(res.map(|b| b.map_err(|never| match never {}).boxed()))
+    }
+
+    fn should_exclude_host(&self, authority: &Authority) -> bool {
+        let host = authority.host();
+        let is_excluded = self
+            .host_exclusion_patterns
+            .iter()
+            .any(|pattern| pattern.is_match(host));
+
+        if is_excluded {
+            tracing::info!("Host '{host}' matches exclusion pattern, using passthrough tunnel");
+        }
+
+        is_excluded
     }
 }
 
