@@ -51,17 +51,14 @@ where
     }
 
     pub async fn start(&self, mut rx: mpsc::Receiver<HtmlDocument>) -> Result<()> {
-        loop {
-            if let Some(document) = rx.recv().await {
-                let loader_clone = self.clone();
-                tokio::task::spawn(async move {
-                    loader_clone.process_document(document).await;
-                });
-            } else {
-                tracing::info!("Channel closed, stopping loader");
-                return Ok(());
-            }
+        while let Some(document) = rx.recv().await {
+            let loader_clone = self.clone();
+            tokio::task::spawn(async move {
+                loader_clone.process_document(document).await;
+            });
         }
+        tracing::info!("Channel closed, stopping loader");
+        Ok(())
     }
 
     async fn process_document(self, document: HtmlDocument) {
