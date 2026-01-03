@@ -11,7 +11,8 @@ use hyper::{service::service_fn, upgrade::Upgraded, Method, Request, Response};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use std::{future::Future, net::SocketAddr, pin::Pin, sync::Arc};
+use regex::Regex;
+use std::{future::Future, net::SocketAddr, pin::Pin, sync::Arc, sync::LazyLock};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite},
     net::TcpListener,
@@ -26,11 +27,7 @@ type HttpsConnector =
 #[async_trait]
 pub trait HttpResponseHandler {
     /// Return true if the response should be processed by `handle_response`.
-    async fn filter_response(
-        &self,
-        _request_headers: &hyper::HeaderMap,
-        _response: &Response<hyper::body::Incoming>,
-    ) -> Result<bool> {
+    async fn filter_response(&self, _response: &Response<hyper::body::Incoming>) -> Result<bool> {
         Ok(true)
     }
 
@@ -47,6 +44,7 @@ pub(crate) struct HttpProxy<CA, H> {
     client: Client<HttpsConnector, hyper::body::Incoming>,
     response_handler: Arc<H>,
     host_exclusion_patterns: Arc<Vec<regex::Regex>>,
+    browser_only: bool,
 }
 
 impl<CA, H> Clone for HttpProxy<CA, H> {
@@ -56,6 +54,7 @@ impl<CA, H> Clone for HttpProxy<CA, H> {
             client: self.client.clone(),
             response_handler: self.response_handler.clone(),
             host_exclusion_patterns: self.host_exclusion_patterns.clone(),
+            browser_only: self.browser_only,
         }
     }
 }
@@ -69,6 +68,7 @@ where
         ca: Arc<CA>,
         response_handler: Arc<H>,
         host_exclusion_patterns: Arc<Vec<regex::Regex>>,
+        browser_only: bool,
     ) -> Result<Self> {
         let https = HttpsConnectorBuilder::new()
             .with_native_roots()?
@@ -87,6 +87,7 @@ where
             client,
             response_handler,
             host_exclusion_patterns,
+            browser_only,
         })
     }
 
@@ -122,16 +123,19 @@ where
             let uri = req.uri().clone();
             if let Some(authority) = uri.authority() {
                 let authority = authority.clone();
+                let should_skip = self.should_skip(Some(&authority), req.headers());
                 tokio::task::spawn(async move {
-                    match hyper::upgrade::on(req).await {
-                        Ok(upgraded) => {
-                            if let Err(e) = self.clone().serve_upgraded(upgraded, authority).await {
-                                tracing::error!("Server IO error for URI {uri}: {e}");
-                            };
+                    let serve_updated_result = match hyper::upgrade::on(req).await {
+                        Ok(upgraded) if should_skip => {
+                            Self::serve_passthrough(upgraded, authority).await
                         }
-                        Err(e) => {
-                            tracing::error!("Upgrade error for URI {uri}: {e}");
-                        }
+                        Ok(upgraded) => self.clone().serve_upgraded(upgraded, authority).await,
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to upgrade connection for URI {uri}: {e}"
+                        )),
+                    };
+                    if let Err(e) = serve_updated_result {
+                        tracing::error!("Failed to serve upgraded connection for URI {uri}: {e}");
                     }
                 });
                 Ok(Response::new(empty()))
@@ -153,21 +157,15 @@ where
             let uri = req.uri().clone();
 
             // Check if the host should be excluded from interception
-            let mut should_skip_interception = uri
-                .authority()
-                .map(|auth| self.should_exclude_host(auth))
-                .unwrap_or(false);
+            let mut should_skip = self.should_skip(uri.authority(), req.headers());
 
-            let request_headers = req.headers().clone();
             let resp = self.client.request(req).await?;
-            if !should_skip_interception {
-                should_skip_interception = !self
-                    .response_handler
-                    .filter_response(&request_headers, &resp)
-                    .await?
+            if !should_skip {
+                // Let the response handler decide if we should skip processing
+                should_skip = !self.response_handler.filter_response(&resp).await?
             }
 
-            if should_skip_interception {
+            if should_skip {
                 // Skip response handling for excluded hosts
                 Ok(resp.map(|b| b.map_err(anyhow::Error::new).boxed()))
             } else {
@@ -177,11 +175,6 @@ where
     }
 
     async fn serve_upgraded(self, upgraded: Upgraded, authority: Authority) -> Result<()> {
-        if self.should_exclude_host(&authority) {
-            // If the host is excluded from interception, just do passthrough tunneling
-            return Self::serve_passthrough(upgraded, authority).await;
-        }
-
         let mut io = TokioIo::new(upgraded);
         let mut read_buffer = [0; 4];
         let bytes_read = io.read(&mut read_buffer).await?;
@@ -354,6 +347,31 @@ where
         Ok(res.map(|b| b.map_err(|never| match never {}).boxed()))
     }
 
+    fn should_skip(
+        &self,
+        authority: Option<&Authority>,
+        request_headers: &hyper::HeaderMap,
+    ) -> bool {
+        if self.browser_only {
+            if let Some(user_agent) = request_headers.get(hyper::header::USER_AGENT) {
+                if let Ok(user_agent_str) = user_agent.to_str() {
+                    if !is_browser(user_agent_str) {
+                        tracing::debug!(
+                            "Skipping request from a non-browser User-Agent: {user_agent_str}"
+                        );
+                        return true;
+                    }
+                } else {
+                    tracing::debug!("Invalid User-Agent header: {user_agent:?}");
+                    return true;
+                }
+            }
+        }
+        authority
+            .map(|auth| self.should_exclude_host(auth))
+            .unwrap_or(false)
+    }
+
     fn should_exclude_host(&self, authority: &Authority) -> bool {
         let host = authority.host();
         let is_excluded = self
@@ -424,4 +442,70 @@ fn recover_uri_authority(
     };
 
     Ok(Request::from_parts(parts, body))
+}
+
+static BROWSER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(chrome/|crios/|firefox/|fxios/|safari/|edg/|edgios/|edga/|opr/|opera/|opt/|samsungbrowser/|brave/|vivaldi/|ucbrowser/|ucweb/)").unwrap()
+});
+
+fn is_browser(user_agent: &str) -> bool {
+    BROWSER_REGEX.is_match(&user_agent.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_browser() {
+        // Chrome
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"));
+        assert!(is_browser("Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"));
+        assert!(is_browser("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.0.0 Mobile/15E148 Safari/604.1"));
+
+        // Firefox
+        assert!(is_browser(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+        ));
+        assert!(is_browser(
+            "Mozilla/5.0 (Android 13; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0"
+        ));
+        assert!(is_browser("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15"));
+
+        // Safari
+        assert!(is_browser("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"));
+        assert!(is_browser("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"));
+
+        // Edge
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"));
+        assert!(is_browser("Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36 EdgA/131.0.0.0"));
+        assert!(is_browser("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/131.0.0.0 Mobile/15E148 Safari/605.1.15"));
+
+        // Other browsers
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/115.0.0.0"));
+        assert!(is_browser("Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36"));
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Brave/131.0.0.0"));
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Vivaldi/7.0.3495.11"));
+        assert!(is_browser("Mozilla/5.0 (Linux; U; Android 13; en-US; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.2987.108 UCBrowser/13.4.0.1306 Mobile Safari/537.36"));
+
+        // Case insensitive
+        assert!(is_browser("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) CHROME/131.0.0.0 Safari/537.36"));
+
+        // Common HTTP clients
+        assert!(!is_browser("curl/7.68.0"));
+        assert!(!is_browser("Wget/1.20.3 (linux-gnu)"));
+        assert!(!is_browser("Python-urllib/3.9"));
+        assert!(!is_browser("axios/0.21.1"));
+        assert!(!is_browser(
+            "node-fetch/1.0 (+https://github.com/bitinn/node-fetch)"
+        ));
+
+        // Bots
+        assert!(!is_browser(
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        ));
+
+        // Empty
+        assert!(!is_browser(""));
+    }
 }

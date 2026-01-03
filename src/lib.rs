@@ -35,7 +35,7 @@ where
     let loader = loader::HtmlLoader::new(semantic_store.clone(), splitter);
 
     let (tx, rx) = mpsc::channel::<loader::HtmlDocument>(100);
-    let extractor = extractor::HttpBodyExtractor::new(tx, config.browser_only);
+    let extractor = extractor::HttpBodyExtractor::new(tx);
 
     let host_exclusion_patterns = config
         .compile_host_exclusion_patterns()
@@ -47,6 +47,7 @@ where
         config.ca_cert_bytes()?,
         extractor,
         host_exclusion_patterns,
+        config.browser_only,
     );
     let loader_result = loader.start(rx);
     let web_result = web::start_web_server(config.web_port, semantic_store.clone());

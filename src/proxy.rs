@@ -17,6 +17,7 @@ pub async fn start_http_proxy<H>(
     ca_cert_bytes: Vec<u8>,
     response_handler: H,
     host_exclusion_patterns: Vec<regex::Regex>,
+    browser_only: bool,
 ) -> Result<()>
 where
     H: http::HttpResponseHandler + Send + Sync + 'static,
@@ -26,6 +27,7 @@ where
         Arc::new(certificate_authority),
         Arc::new(response_handler),
         Arc::new(host_exclusion_patterns),
+        browser_only,
     )?;
     http_proxy.start(port).await
 }
