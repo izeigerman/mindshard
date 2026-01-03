@@ -46,7 +46,7 @@ pub(crate) struct HttpProxy<CA, H> {
     ca: Arc<CA>,
     client: Client<HttpsConnector, hyper::body::Incoming>,
     response_handler: Arc<H>,
-    host_exclusion_patterns: Vec<regex::Regex>,
+    host_exclusion_patterns: Arc<Vec<regex::Regex>>,
 }
 
 impl<CA, H> Clone for HttpProxy<CA, H> {
@@ -68,7 +68,7 @@ where
     pub fn new(
         ca: Arc<CA>,
         response_handler: Arc<H>,
-        host_exclusion_patterns: Vec<regex::Regex>,
+        host_exclusion_patterns: Arc<Vec<regex::Regex>>,
     ) -> Result<Self> {
         let https = HttpsConnectorBuilder::new()
             .with_native_roots()?

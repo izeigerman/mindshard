@@ -25,7 +25,7 @@ where
     let http_proxy = http::HttpProxy::new(
         Arc::new(certificate_authority),
         Arc::new(response_handler),
-        host_exclusion_patterns,
+        Arc::new(host_exclusion_patterns),
     )?;
     http_proxy.start(port).await
 }
