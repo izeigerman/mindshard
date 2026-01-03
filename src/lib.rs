@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -37,11 +37,16 @@ where
     let (tx, rx) = mpsc::channel::<loader::HtmlDocument>(100);
     let extractor = extractor::HttpBodyExtractor::new(tx, config.browser_only);
 
+    let host_exclusion_patterns = config
+        .compile_host_exclusion_patterns()
+        .context("Failed to compile host exclusion patterns")?;
+
     let proxy_result = proxy::start_http_proxy(
         config.proxy_port,
         config.private_key_bytes()?,
         config.ca_cert_bytes()?,
         extractor,
+        host_exclusion_patterns,
     );
     let loader_result = loader.start(rx);
     let web_result = web::start_web_server(config.web_port, semantic_store.clone());
