@@ -151,16 +151,27 @@ where
             }
 
             let uri = req.uri().clone();
+
+            // Check if the host should be excluded from interception
+            let mut should_skip_interception = uri
+                .authority()
+                .map(|auth| self.should_exclude_host(auth))
+                .unwrap_or(false);
+
             let request_headers = req.headers().clone();
             let resp = self.client.request(req).await?;
-            if self
-                .response_handler
-                .filter_response(&request_headers, &resp)
-                .await?
-            {
-                self.response_handler.handle_response(uri, resp).await
-            } else {
+            if !should_skip_interception {
+                should_skip_interception = !self
+                    .response_handler
+                    .filter_response(&request_headers, &resp)
+                    .await?
+            }
+
+            if should_skip_interception {
+                // Skip response handling for excluded hosts
                 Ok(resp.map(|b| b.map_err(anyhow::Error::new).boxed()))
+            } else {
+                self.response_handler.handle_response(uri, resp).await
             }
         }
     }
